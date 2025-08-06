@@ -1,10 +1,11 @@
-require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const fs = require('fs');
 const { Configuration, OpenAIApi } = require('openai');
+require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 
-// اتصال به تلگرام با متغیر loveBot
-const loveBot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+// اتصال به ربات تلگرام
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // اتصال به OpenAI
 const configuration = new Configuration({
@@ -12,101 +13,31 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 
-// بارگذاری سوالات
-const questions = JSON.parse(fs.readFileSync('questions.json', 'utf8'));
-
-// وضعیت کاربران
-const users = {};
-
-loveBot.on('message', async (msg) => {
+// نمونه پاسخ ساده به هر پیام متنی
+bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text;
+  const userMessage = msg.text;
 
-  if (!users[chatId]) {
-    users[chatId] = {
-      step: 0,
-      answers: [],
-      lang: 'fa', // پیش‌فرض: فارسی
-    };
+  // پاسخ ساده اولیه
+  if (userMessage.toLowerCase() === '/start') {
+    return bot.sendMessage(chatId, 'سلام! به ربات زوجین خوش اومدی. 🌹\nدر حال آماده‌سازی سوالات اولیه...');
+  }
 
-    loveBot.sendMessage(chatId, "🇮🇷 لطفاً زبان مورد نظر را انتخاب کن:\n🇸🇦 يرجى اختيار اللغة", {
-      reply_markup: {
-        keyboard: [['فارسی 🇮🇷', 'العربية 🇸🇦']],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-      }
+  // ارسال به OpenAI (در صورت نیاز)
+  try {
+    const aiResponse = await openai.createChatCompletion({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: 'تو یک مشاور روابط عاشقانه هستی.' },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.7,
     });
-    return;
-  }
 
-  const user = users[chatId];
-
-  // انتخاب زبان
-  if (user.step === 0 && (text.includes("فارسی") || text.includes("العربية"))) {
-    user.lang = text.includes("العربية") ? 'ar' : 'fa';
-    user.step++;
-    loveBot.sendMessage(chatId, user.lang === 'fa' ? "لینک دعوت پارتنرت رو وارد کن:" : "أرسل رابط دعوة شريكك:");
-    return;
-  }
-
-  // لینک دعوت (فعلاً به عنوان متن دریافت می‌کنیم)
-  if (user.step === 1) {
-    user.partnerLink = text;
-    user.step++;
-    loveBot.sendMessage(chatId, user.lang === 'fa' ? "بزن بریم سراغ سوالات ❤️" : "لنبدأ الأسئلة ❤️");
-    askNextQuestion(chatId);
-    return;
-  }
-
-  // ذخیره پاسخ‌ها
-  if (user.step > 1 && user.step - 2 < questions[user.lang].length) {
-    user.answers.push(text);
-    user.step++;
-    askNextQuestion(chatId);
-  }
-
-  // پایان
-  if (user.step - 2 === questions[user.lang].length) {
-    loveBot.sendMessage(chatId, user.lang === 'fa' ? "🧠 در حال تحلیل پاسخ‌ها توسط هوش مصنوعی..." : "🧠 جاري تحليل إجاباتك من قبل الذكاء الاصطناعي...");
-
-    const prompt = `
-    تحلیل روانشناسی برای یک رابطه عاشقانه بر اساس پاسخ‌های زیر بده و ۱۰ پیشنهاد برای بهبود رابطه ارائه کن:
-    ${user.answers.map((a, i) => `سوال ${i + 1}: ${a}`).join('\n')}
-    `;
-
-    try {
-      const aiResponse = await openai.createChatCompletion({
-        model: "gpt-4",
-        messages: [{ role: "user", content: prompt }]
-      });
-
-      const analysis = aiResponse.data.choices[0].message.content;
-      loveBot.sendMessage(chatId, analysis);
-    } catch (error) {
-      loveBot.sendMessage(chatId, user.lang === 'fa' ?
-        "مشکلی در ارتباط با هوش مصنوعی پیش آمد. لطفاً بعداً تلاش کن." :
-        "حدثت مشكلة في الاتصال بالذكاء الاصطناعي. حاول مرة أخرى لاحقًا.");
-    }
+    const reply = aiResponse.data.choices[0].message.content;
+    bot.sendMessage(chatId, reply);
+  } catch (error) {
+    console.error('❌ Error with OpenAI:', error.message);
+    bot.sendMessage(chatId, 'مشکلی در ارتباط با هوش مصنوعی به وجود آمد. لطفاً دوباره تلاش کن.');
   }
 });
-
-// ارسال سوال بعدی
-function askNextQuestion(chatId) {
-  const user = users[chatId];
-  const index = user.step - 2;
-  const question = questions[user.lang][index];
-
-  if (!question) return;
-
-  if (question.options) {
-    loveBot.sendMessage(chatId, question.text, {
-      reply_markup: {
-        keyboard: [question.options],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-      }
-    });
-  } else {
-    loveBot.sendMessage(chatId, question.text);
-  }
-}
