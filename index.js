@@ -1,43 +1,34 @@
 const TelegramBot = require('node-telegram-bot-api');
-const fs = require('fs');
-const faMessages = require('./fa.json');
-const arMessages = require('./ar.json');
 
-// توکن تلگرام از متغیر محیطی
+// دریافت توکن از Environment Variables
 const token = process.env.BOT_TOKEN;
 
-// ایجاد ربات تلگرام
-const bot = new TelegramBot(token, { polling: true });
-
-console.log('🤖 Telegram bot started...');
-
-// پیام خوش‌آمد با الهام از داستان تو و عمر
-const welcomeMessage = `
-🎻 به ربات تحلیل عشق خوش آمدید
-
-این ربات برای عاشق‌ها ساخته شده تا رابطه‌شون رو عمیق‌تر کنن 💞  
-مهم نیست کجای دنیا هستید، فقط کافیه همو دوست داشته باشید ❤️  
-`;
-
-// ارسال پیام تصادفی عاشقانه
-function getRandomLoveLine(lang) {
-  const lines = lang === 'fa' ? fs.readFileSync('./fa.txt', 'utf-8').split('\n') : fs.readFileSync('./ar.txt', 'utf-8').split('\n');
-  return lines[Math.floor(Math.random() * lines.length)];
+if (!token) {
+  console.error("❌ توکن ربات پیدا نشد. لطفاً BOT_TOKEN را در Environment Variables تنظیم کنید.");
+  process.exit(1);
 }
 
-// پاسخ به پیام‌ها
+// ایجاد ربات در حالت polling
+const bot = new TelegramBot(token, { polling: true });
+
+console.log("🤖 ربات تلگرام شروع به کار کرد...");
+
+// پیام خوش‌آمدگویی برای شروع
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const firstName = msg.from.first_name || "عزیزم";
+
+  const welcomeMessage = `سلام ${firstName} 🌈\n\nبه ربات تحلیل رابطه خوش اومدی! ❤️\n\nبرای ادامه، فقط کافیه پیام بدی یا از دستورهای زیر استفاده کنی.`;
+
+  bot.sendMessage(chatId, welcomeMessage);
+});
+
+// پاسخ به هر پیام متنی
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text?.toLowerCase() || '';
-  const lang = msg.from.language_code === 'ar' ? 'ar' : 'fa';
-  const messages = lang === 'fa' ? faMessages : arMessages;
 
-  if (text.includes('/start')) {
-    bot.sendMessage(chatId, welcomeMessage);
-  } else if (text.includes('عشق') || text.includes('حب') || text.includes('love')) {
-    const quote = getRandomLoveLine(lang);
-    bot.sendMessage(chatId, `${messages.loveLine}\n\n${quote}`);
-  } else {
-    bot.sendMessage(chatId, messages.default);
-  }
+  // جلوگیری از تکرار پاسخ به /start
+  if (msg.text.toString().toLowerCase() === '/start') return;
+
+  bot.sendMessage(chatId, `📩 پیامت دریافت شد!\nفعلاً در حال ساخت سیستم تحلیل رابطه هستیم 🛠️`);
 });
