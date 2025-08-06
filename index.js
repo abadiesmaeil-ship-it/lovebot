@@ -128,3 +128,37 @@ async function analyzeRelationship(userId, answers, lang, ctx) {
 
 bot.launch();
 console.log('🤖 ربات شروع به کار کرد...');
+const TelegramBot = require('node-telegram-bot-api');
+const OpenAI = require('openai');
+require('dotenv').config();
+
+// ربات تلگرام
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+
+// کلید API هوش مصنوعی
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// شروع ربات
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const userMessage = msg.text;
+
+  try {
+    // ارسال پیام کاربر به هوش مصنوعی
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    const aiReply = completion.choices[0].message.content;
+
+    // ارسال پاسخ هوش مصنوعی به کاربر
+    await bot.sendMessage(chatId, aiReply);
+
+  } catch (error) {
+    console.error("AI error:", error.message);
+    await bot.sendMessage(chatId, "❌ مشکلی در ارتباط با هوش مصنوعی به وجود آمد. لطفاً دوباره تلاش کن.");
+  }
+});
