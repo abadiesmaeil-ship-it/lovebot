@@ -1,127 +1,130 @@
 require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
+const { Telegraf } = require('telegraf');
+const { Configuration, OpenAIApi } = require('openai');
 
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
-let sessions = {}; // ساختار برای ذخیره کاربران، زبان، لینک و پاسخ‌ها
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
 
-const languages = {
-  fa: "🇮🇷 فارسی",
-  ar: "🇸🇦 عربي"
-};
+// زبان پیش‌فرض کاربر
+const userLang = {};
+const userPartner = {};
+const userAnswers = {};
+const questions = require('./questions.json');
 
-const questions = {
-  fa: [
-    { text: "از ۱ تا ۱۰ چقدر پارتنرتو دوست داری؟", type: "input", key: "love_score" },
-    { text: "از ۱ تا ۱۰ چقدر از رابطه‌تون راضی هستی؟", type: "input", key: "relation_score" },
-    { text: "آیا در رابطه جنسی، کسی دیگر را تصور کردی؟", type: "choice", key: "imagining_other", options: ["بله", "خیر"] },
-    { text: "آیا به پارتنرت خیانت احساسی کردی؟", type: "choice", key: "emotional_cheat", options: ["بله", "خیر"] },
-    { text: "آیا تا حالا با پارتنر قبلی‌ات در این رابطه صحبت کردی؟", type: "choice", key: "old_partner", options: ["بله", "خیر"] },
-    { text: "۳ ویژگی مثبت پارتنرت رو بنویس", type: "input", key: "positives" },
-    { text: "۳ ویژگی که دوست داری بهتر بشن", type: "input", key: "improvements" },
-  ],
-  ar: [
-    { text: "من ١ إلى ١٠، كم تحب شريكك؟", type: "input", key: "love_score" },
-    { text: "من ١ إلى ١٠، كم أنت راضٍ عن العلاقة؟", type: "input", key: "relation_score" },
-    { text: "هل تخيلت شخصًا آخر أثناء علاقة الجنس؟", type: "choice", key: "imagining_other", options: ["نعم", "لا"] },
-    { text: "هل خنت شريكك مشاعرياً؟", type: "choice", key: "emotional_cheat", options: ["نعم", "لا"] },
-    { text: "هل تواصلت مع شريكك السابق؟", type: "choice", key: "old_partner", options: ["نعم", "لا"] },
-    { text: "اكتب ٣ صفات إيجابية في شريكك", type: "input", key: "positives" },
-    { text: "اكتب ٣ أشياء تريد تحسينها", type: "input", key: "improvements" },
-  ]
-};
-
-// شروع با انتخاب زبان
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  sessions[chatId] = { step: "language" };
-
-  const options = {
+// مرحله ورود
+bot.start((ctx) => {
+  userLang[ctx.from.id] = null;
+  ctx.reply('👋 لطفاً زبان خود را انتخاب کنید:', {
     reply_markup: {
-      keyboard: [[languages.fa], [languages.ar]],
-      one_time_keyboard: true,
-      resize_keyboard: true
+      inline_keyboard: [
+        [{ text: 'فارسی 🇮🇷', callback_data: 'lang_fa' }],
+        [{ text: 'العربية 🇸🇦', callback_data: 'lang_ar' }]
+      ]
     }
-  };
-
-  bot.sendMessage(chatId, "لطفاً زبان خود را انتخاب کنید:", options);
+  });
 });
 
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text;
-  let session = sessions[chatId];
+// انتخاب زبان
+bot.action(/lang_(.+)/, (ctx) => {
+  const lang = ctx.match[1];
+  userLang[ctx.from.id] = lang;
+  ctx.reply(lang === 'fa'
+    ? 'برای شروع، آی‌دی تلگرام پارتنرت رو بدون @ وارد کن (مثلاً: esmaeil123)'
+    : 'لبداية، الرجاء إرسال اسم مستخدم شريكك بدون @ (مثال: ali123)');
+});
 
-  if (!session) return;
+// گرفتن آیدی پارتنر
+bot.on('text', async (ctx) => {
+  const userId = ctx.from.id;
+  const lang = userLang[userId];
 
-  if (session.step === "language") {
-    if (text === languages.fa) session.lang = "fa";
-    else if (text === languages.ar) session.lang = "ar";
-    else return bot.sendMessage(chatId, "زبان معتبر نیست");
+  if (!userPartner[userId]) {
+    const partnerUsername = ctx.message.text.trim();
+    userPartner[userId] = partnerUsername;
+    ctx.reply(lang === 'fa'
+      ? '✅ دعوتنامه برای پارتنرت ارسال شد. منتظر باش تا ایشون هم وارد بشه.'
+      : '✅ تم إرسال الدعوة إلى شريكك. الرجاء الانتظار حتى ينضم.');
 
-    session.step = "link";
-    session.answers = {};
-
-    const inviteLink = `https://t.me/${bot.username}?start=${chatId}`;
-    session.inviteLink = inviteLink;
-
-    bot.sendMessage(chatId, `لینک دعوت را برای پارتنر خود بفرست:\n${inviteLink}`);
-    bot.sendMessage(chatId, session.lang === "fa" ? "بعد از ورود پارتنرت، سوالات شروع می‌شوند." : "بعد دخول شريكك، ستبدأ الأسئلة.");
+    try {
+      await bot.telegram.sendMessage(`@${partnerUsername}`, lang === 'fa'
+        ? `👋 سلام! پارتنرت شما رو دعوت کرده تا در یک آزمون تحلیلی رابطه شرکت کنید. لطفاً به ربات پیام بده تا شروع کنیم.`
+        : `👋 مرحبًا! شريكك دعاك للانضمام إلى اختبار تحليل العلاقة. الرجاء بدء المحادثة مع الروبوت.`);
+    } catch (err) {
+      ctx.reply(lang === 'fa'
+        ? '❌ نتونستم پیامو برای پارتنرت بفرستم. مطمئنی یوزرنیم درسته؟'
+        : '❌ لم أستطع إرسال الرسالة إلى شريكك. تأكد من صحة اسم المستخدم.');
+    }
     return;
   }
 
-  // شروع پرسش‌ها
-  const qList = questions[session.lang];
-  if (!session.currentQ) session.currentQ = 0;
+  // سؤالات شروع شده
+  if (!userAnswers[userId]) {
+    userAnswers[userId] = { currentQ: 0, answers: [] };
+  }
 
-  if (session.currentQ < qList.length) {
-    const current = qList[session.currentQ];
+  const current = userAnswers[userId];
+  const question = questions[lang][current.currentQ];
 
-    // ذخیره پاسخ
-    if (session.currentQ > 0) {
-      const prev = qList[session.currentQ - 1];
-      session.answers[prev.key] = text;
+  if (question) {
+    if (question.options) {
+      const valid = question.options.includes(ctx.message.text.trim());
+      if (!valid) {
+        return ctx.reply(lang === 'fa'
+          ? '❗ لطفاً یکی از گزینه‌های مشخص‌شده رو انتخاب کن.'
+          : '❗ الرجاء اختيار خيار صالح من القائمة.');
+      }
     }
+    current.answers.push({
+      q: question.q,
+      a: ctx.message.text.trim()
+    });
+    current.currentQ++;
 
-    // سوال بعدی
-    if (current.type === "choice") {
-      const options = {
+    // سؤال بعدی
+    const nextQ = questions[lang][current.currentQ];
+    if (nextQ) {
+      return ctx.reply(nextQ.q, nextQ.options ? {
         reply_markup: {
-          keyboard: [current.options.map(opt => opt)],
+          keyboard: [nextQ.options.map((opt) => ({ text: opt }))],
           one_time_keyboard: true,
           resize_keyboard: true
         }
-      };
-      bot.sendMessage(chatId, current.text, options);
+      } : undefined);
     } else {
-      bot.sendMessage(chatId, current.text);
-    }
-
-    session.currentQ++;
-  } else {
-    // همه پاسخ‌ها ثبت شد
-    bot.sendMessage(chatId, session.lang === "fa" ? "پاسخ‌های شما ثبت شد ✅" : "تم تسجيل إجاباتك ✅");
-
-    // ارسال به هوش مصنوعی
-    const aiPrompt = Object.entries(session.answers).map(([k, v]) => `${k}: ${v}`).join('\n');
-
-    try {
-      const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: `تحلیل روانشناختی این پاسخ‌ها رو بده:\n${aiPrompt}` }]
-      }, {
-        headers: {
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      });
-
-      const analysis = response.data.choices[0].message.content;
-      bot.sendMessage(chatId, session.lang === "fa" ? `🔍 تحلیل رابطه:\n${analysis}` : `🔍 تحليل العلاقة:\n${analysis}`);
-    } catch (err) {
-      console.error(err);
-      bot.sendMessage(chatId, session.lang === "fa" ? "مشکلی در ارتباط با هوش مصنوعی پیش آمد." : "حدثت مشكلة مع الذكاء الاصطناعي.");
+      ctx.reply(lang === 'fa'
+        ? '⏳ تحلیل رابطه در حال پردازشه...'
+        : '⏳ يتم الآن تحليل علاقتك...');
+      analyzeRelationship(userId, current.answers, lang, ctx);
     }
   }
 });
+
+// تابع تحلیل با OpenAI
+async function analyzeRelationship(userId, answers, lang, ctx) {
+  const summaryPrompt = `
+  کاربر به سوالات زیر اینگونه پاسخ داده است:\n${answers.map(a => `Q: ${a.q}\nA: ${a.a}`).join('\n\n')}
+  
+  لطفاً یک تحلیل روانشناختی از رابطه آن‌ها ارائه بده به زبان ${lang === 'fa' ? 'فارسی' : 'عربی'} و ۱۰ پیشنهاد دوستانه برای بهبود رابطه‌شان ارائه بده.
+  `;
+
+  try {
+    const gptRes = await openai.createChatCompletion({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: summaryPrompt }]
+    });
+
+    const output = gptRes.data.choices[0].message.content;
+    ctx.reply(output);
+  } catch (e) {
+    ctx.reply(lang === 'fa'
+      ? '❌ مشکلی در تحلیل رابطه به وجود آمد. لطفاً بعداً امتحان کن.'
+      : '❌ حدث خطأ أثناء تحليل العلاقة. الرجاء المحاولة لاحقًا.');
+  }
+}
+
+bot.launch();
+console.log('🤖 ربات شروع به کار کرد...');
