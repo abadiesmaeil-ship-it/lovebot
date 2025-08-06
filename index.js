@@ -1,68 +1,66 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 
-// توکن از محیط (Render Environment Variable)
-const token = process.env.BOT_TOKEN;
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-console.log('🤖 ربات تلگرام شروع به کار کرد...');
+const responses = {
+  fa: {
+    welcome: 'سلام 💖 به ربات تحلیل عشق خوش اومدی! لطفاً زبانت رو انتخاب کن.',
+    languages: {
+      en: '🇺🇸 English',
+      fa: '🇮🇷 فارسی'
+    },
+    default: 'عزیز دلم، احساس‌تو باهام درمیون بذار 💞',
+    love: 'آره، دیوونتم 😍 تو عشقی ❤️',
+  },
+  en: {
+    welcome: 'Hi 💖 Welcome to the Love Analyzer Bot! Please choose your language.',
+    languages: {
+      en: '🇺🇸 English',
+      fa: '🇮🇷 Persian'
+    },
+    default: 'Sweetheart, share your feelings with me 💞',
+    love: 'Yes, I love you so much 😍 You are my everything ❤️',
+  }
+};
 
-// دیتابیس ساده (حافظه موقت)
-const users = {};
+const userLang = {}; // to store user's selected language
 
-// دستور شروع
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
   const langKeyboard = {
     reply_markup: {
-      keyboard: [
-        [{ text: '🇮🇷 فارسی' }, { text: '🇬🇧 English' }]
-      ],
-      resize_keyboard: true,
-      one_time_keyboard: true
+      inline_keyboard: [
+        [
+          { text: responses.fa.languages.fa, callback_data: 'lang_fa' },
+          { text: responses.fa.languages.en, callback_data: 'lang_en' }
+        ]
+      ]
     }
   };
 
-  bot.sendMessage(chatId, '👋 لطفاً زبان خود را انتخاب کنید / Please choose your language:', langKeyboard);
+  bot.sendMessage(chatId, responses.fa.welcome, langKeyboard);
 });
 
-// مدیریت پیام‌ها
+bot.on('callback_query', (query) => {
+  const chatId = query.message.chat.id;
+  const lang = query.data.split('_')[1];
+  userLang[chatId] = lang;
+
+  bot.sendMessage(chatId, `زبان شما تنظیم شد به: ${responses[lang].languages[lang]}`);
+});
+
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
+  const lang = userLang[chatId] || 'fa';
 
-  // انتخاب زبان
-  if (text === '🇮🇷 فارسی') {
-    users[chatId] = { lang: 'fa' };
-    bot.sendMessage(chatId, `به ربات تحلیل عشق خوش اومدی ❤️\n\nلینک دعوت از عشق‌ت:\nhttps://t.me/Eshgoudsgl_bot?start=${chatId}`);
-    return;
-  }
+  if (text === '/start') return;
 
-  if (text === '🇬🇧 English') {
-    users[chatId] = { lang: 'en' };
-    bot.sendMessage(chatId, `Welcome to Love Analyzer 💖\n\nInvite your partner using this link:\nhttps://t.me/Eshgoudsgl_bot?start=${chatId}`);
-    return;
-  }
-
-  // واکنش‌ها بر اساس زبان ذخیره‌شده
-  const userLang = users[chatId]?.lang || 'fa';
-
-  if (userLang === 'fa') {
-    if (text.includes('دوستم داری')) {
-      bot.sendMessage(chatId, 'بیشتر از همه دنیا 💘');
-    } else if (text.includes('عشق من')) {
-      bot.sendMessage(chatId, 'همیشه کنارتم عشقم 😍');
-    } else {
-      bot.sendMessage(chatId, 'عزیز دلم، احساس‌تو باهام درمیون بذار 💞');
-    }
+  if (/love|دوست|عشق/i.test(text)) {
+    bot.sendMessage(chatId, responses[lang].love);
   } else {
-    if (text.toLowerCase().includes('do you love me')) {
-      bot.sendMessage(chatId, 'More than anything in the world 💘');
-    } else if (text.toLowerCase().includes('my love')) {
-      bot.sendMessage(chatId, 'Always by your side 💖');
-    } else {
-      bot.sendMessage(chatId, 'Tell me your heart 💌');
-    }
+    bot.sendMessage(chatId, responses[lang].default);
   }
 });
