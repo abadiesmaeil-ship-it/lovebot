@@ -1,15 +1,23 @@
 {
   "name": "lovebot",
   "version": "1.0.0",
-  "description": "A couple analysis Telegram bot with AI support",
+  "description": "A Telegram bot for couples with multilingual support and AI-powered analysis.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "keywords": [
+    "telegram",
+    "bot",
+    "love",
+    "couples",
+    "openai"
+  ],
+  "author": "your-name-here",
+  "license": "MIT",
   "dependencies": {
     "dotenv": "^16.3.1",
-    "node-fetch": "^2.6.7",
-    "openai": "^4.25.1",
-    "telegraf": "^4.12.2"
+    "node-telegram-bot-api": "^0.61.0",
+    "openai": "^4.15.0"
   }
 }
